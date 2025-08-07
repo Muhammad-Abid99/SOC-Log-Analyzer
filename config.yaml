@@ -1,0 +1,28 @@
+<!--
+SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# src/config.yaml
+
+# 📥 Input and Output Paths
+input_evtx: "data/security_recent.evtx"              # Path to raw Windows EVTX log file
+parsed_csv: "output/parsed_security_logs.csv"        # CSV output after parsing
+
+# 📝 Report Paths
+text_report: "output/log_summary.txt"                # Plain text summary report
+html_report: "output/log_analysis_report.html"       # HTML report (Jinja2)
+pdf_report: "output/log_analysis_report.pdf"         # PDF report (from HTML)
+
+# ⏰ Working Hours (for unusual logon detection)
+working_hours:
+  start: "08:00"     # Start of working hours (24-hour format)
+  end: "18:00"       # End of working hours (24-hour format)
+
+# 📊 Visualization Settings (optional)
+visuals:
+  save_dir: "output/"
+
+# 🔐 Reserved for future use (SIEM, auth, etc.)
+# api_keys:
+#   virustotal: "YOUR_API_KEY"
