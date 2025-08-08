@@ -7,118 +7,113 @@ SPDX-License-Identifier: Apache-2.0
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen)](https://pre-commit.com/)
 [![REUSE Compliance](https://img.shields.io/badge/REUSE-Compliant-brightgreen)](https://reuse.software/)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
-![Status](https://img.shields.io/badge/Stage-MVP--Ready-yellow.svg)
+![Status](https://img.shields.io/badge/Stage-MVP--In--Progress-orange.svg)
 ![Made With Love](https://img.shields.io/badge/Made%20With-%E2%9D%A4-red)
 
-> **SOC Log Analyzer** is a powerful real-world cybersecurity tool designed to help SOC teams parse, analyze, and detect threats from Windows Event Logs using Python and Data Science techniques.
+> **SOC Log Analyzer** is a real-world cybersecurity tool (MVP in progress) designed to help SOC teams parse and analyze Windows Event Logs using Python and Data Science foundations.
+
+---
+
+## 🧠 Important Note for Users
+
+🚨 This tool is currently in **early development stage (MVP-in-progress)**.
+If you're trying it out:
+
+* 🔐 **Provide your own `.evtx` Windows Event Log** files inside the `data/` folder.
+* 📦 The `requirements.txt` is created but not yet populated.
+* ⚠️ Detection and reporting modules are planned but **not implemented yet**.
 
 ---
 
 ## 🌐 Project Structure
 
-```
+```text
 SOC-Log-Analyzer/
-├── data/                          ← Contains raw `.evtx` logs (ignored)
-├── LICENSES
-├── output/                        ← Contains reports & parsed CSVs (ignored)
+├── data/                          ← Your `.evtx` logs go here (excluded from Git)
+├── output/                        ← Parsed `.csv` and future reports (excluded from Git)
 ├── src/
-│   ├── main.py                    ← CLI entry point
-│   ├── windows_parser.py          ← EVTX to CSV parser
-│   ├── report/
-│   │   ├── report_generator.py    ← HTML/PDF report using Jinja2
-│   │   └── report_text.py         ← Text-only report
-│   ├── analyzer.py                ← [Reserved for core logic integration]
-│   ├── detector_manager.py        ← [Reserved for detector orchestration]
-│   ├── detectors/                 ← Detection modules
-│   │   ├── brute_force_detector.py
-│   │   ├── new_user_creation_detector.py
-│   │   ├── privileged_logon_detector.py
-│   │   └── unusual_logon_time_detector.py
-├── templates/                    ← (Empty) Jinja2 templates for HTML reports
-├── .gitignore
-├── .pre-commit-config.yaml       ← For code linting & REUSE compliance
+│   ├── main.py                    ← CLI entry point (working ✅)
+│   ├── windows_parser.py         ← Parses `.evtx` → `.csv` (working ✅)
+│   ├── analyzer.py               ← [Reserved for future use]
+│   ├── detector_manager.py       ← [Reserved for future use]
+│   ├── detectors/                ← [Planned]
+│   └── report/                   ← [Planned: text + PDF/HTML reports]
+├── templates/                    ← [Planned: Jinja2 templates for reports]
+├── config.yaml                   ← Global config file (working ✅)
+├── .gitignore                    ← Excludes raw data and output
+├── .pre-commit-config.yaml       ← [Planned for REUSE/linting]
 ├── CHANGELOG.md
-├── config.yaml                   ← Global config for paths/settings
 ├── LICENSE
 ├── README.md
-└── requirements.txt              ← Python dependencies
+└── requirements.txt              ← Created but currently empty
 ```
 
 ---
 
-## 🚀 Features Implemented
+## ✅ Completed So Far
 
-* ✅ **EVTX Parsing** — Convert `.evtx` Windows logs into structured CSV using `windows_parser.py`
-* ✅ **Threat Detection Modules**
-
-  * Detect **Brute Force Attacks** from repeated failed logins (Event ID 4625)
-  * Detect **New User Creation** (Event ID 4720)
-  * Detect **Privileged Logons** (Event ID 4672)
-  * Detect **Unusual Logon Times** (Event ID 4624 outside working hours)
-* ✅ **Modular Detector System** — Easily extendable under `detectors/`
-* ✅ **Multi-format Reports** — Generate detailed HTML, PDF, and Text reports with visualizations
-* ✅ **Pre-commit + REUSE** — Enforced open-source licensing and clean code commits
+* ✅ Project initialized with clean, scalable folder structure
+* ✅ `.gitignore` excludes sensitive raw logs and output
+* ✅ `main.py` CLI interface added with flags (`--parse`, `--analyze`, `--report`, `--all`)
+* ✅ `windows_parser.py` parses Windows `.evtx` to structured `.csv`
+* ✅ `config.yaml` allows centralized path/settings config
 
 ---
 
-## ⚙️ Getting Started
+## 🚀 How to Use (for current version)
 
-### 1. Clone the Repo
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Muhammad-Abid99/SOC-Log-Analyzer.git
 cd SOC-Log-Analyzer
 ```
 
-### 2. Install Requirements
+### 2. Install Dependencies
+
+> 📦 `requirements.txt` is currently **empty**. Add dependencies before running.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Activate pre-commit Hooks (Optional but Recommended)
+### 3. Add Your Logs
+
+Place your `.evtx` file inside the `data/` folder. (e.g., `data/security_recent.evtx`)
+
+### 4. Run the Parser
 
 ```bash
-pre-commit install
-pre-commit run --all-files
-```
-
-### 4. Run Analyzer
-
-```bash
-python src/main.py --all
+python src/main.py --parse
 ```
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
-All source files contain SPDX license and copyright headers.
+Licensed under the [Apache License 2.0](LICENSE).
+All future source files will follow [REUSE](https://reuse.software/) compliance.
 
 ---
 
-## 🤝 Author
+## 🧑‍💻 Author
 
-Developed with dedication and love by **G. Mohammad**.
-
-Contact: [ghmuhammad324@gmail.com](mailto:ghmuhammad324@gmail.com)
-
----
-
-## 📊 Future Enhancements
-
-* ◻ Web dashboard using Flask / FastAPI
-* ◻ Email alerting system
-* ◻ Machine learning-based anomaly detection
-* ◻ Real-time streaming log ingestion
-* ◻ Integration with SIEM platforms (e.g., Splunk, ELK)
+Developed with dedication by **G. Mohammad**
+📫 Contact: [ghmuhammad324@gmail.com](mailto:ghmuhammad324@gmail.com)
 
 ---
 
-> This tool is not just a portfolio — it is a real-world, mission-critical SOC solution. Built with ❤️ and Python.
+## 🔮 Roadmap
+
+* ⏳ Add detection modules (Brute Force, New User, etc.)
+* ⏳ Add text, HTML, and PDF report generators
+* ⏳ Add CLI integration for analysis and reporting
+* ⏳ Add a Web Dashboard (Flask/FastAPI)
+* ⏳ Add email alerting & ML anomaly detection
+* ⏳ Integrate with SIEMs like Splunk / ELK
 
 ---
+
+> ⚠️ This is not a showcase — it's a real-world, production-driven SOC project under active development. Built with ❤️, honesty, and vision.

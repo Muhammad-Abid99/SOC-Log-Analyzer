@@ -12,33 +12,28 @@ This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.
 
 ## [v0.1.0] - 2025-08-07
 ### Added
-- ✅ Project initialized with production-grade folder structure
-- ✅ `README.md`, `.gitignore`, Apache License 2.0 added
-- ✅ `requirements.txt` created (empty for now)
-
+- ✅ Initial project setup with professional folder structure
+- ✅ `.gitignore` to protect sensitive logs and output
+- ✅ `README.md` and Apache License 2.0 added
+- ✅ `CHANGELOG.md` created
 - ✅ `main.py` CLI entrypoint with flags:
   - `--parse`, `--analyze`, `--report`, `--all`
-
-- ✅ `config.yaml` added for centralized config:
-  - Input EVTX, output CSV/report paths, working hours
-
-- ✅ `windows_parser.py` implemented to:
-  - Parse `.evtx` logs using `Evtx`, `xml.etree`, and `pandas`
-  - Extract system + event fields and save clean `.csv`
+- ✅ `windows_parser.py` parses `.evtx` to `.csv`
+- ✅ `config.yaml` with centralized paths/settings
 
 ---
 
 ## [Upcoming - v0.2.0]
 ### Planned
-- 🚧 Add `brute_force_detector.py` (detect Event ID 4625 failed logons)
-- 🚧 Add `detector_manager.py` to aggregate all detection modules
-- 🚧 Integrate reporting modules (`report_text.py`, `report_generator.py`)
-- 🚧 Begin modular threat detection system
+- 🚧 Add `brute_force_detector.py` (Event ID 4625)
+- 🚧 Add `detector_manager.py` to orchestrate detection modules
+- 🚧 Begin integrating reporting (`report_text.py`, `report_generator.py`)
+- 🚧 Add pre-commit hooks and REUSE linting
+- 🚧 Begin implementing statistical and visual analysis
 
 ---
 
 ## 💼 Project Stage
-🔐 Real-World SOC Tool in MVP Phase  
-📈 Goal: Investor-ready, financially sustainable security product
 
----
+🔐 Real-World SOC Tool — MVP In Progress  
+📈 Goal: Investor-ready, sustainable security product
