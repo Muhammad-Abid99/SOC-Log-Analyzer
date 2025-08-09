@@ -1,39 +1,47 @@
-<!--
-SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
-SPDX-License-Identifier: Apache-2.0
--->
+# SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
 
-# ✅ Ignore raw log files and sensitive outputs
-data/security_recent.evtx
-output/parsed_security_logs.csv
-
-# ✅ Ignore output reports
-output/*.txt
-output/*.html
-output/*.pdf
-output/*.png
-
-# ✅ Python compiled & cache files
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
-# ✅ Python environment files
+# C extensions
+*.so
+
+# Environment
 .env
-*.env
 .venv/
-venv/
 env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+Ml_env/
 
-# ✅ Editor-specific files
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# VSCode settings
 .vscode/
-.idea/
 
-# ✅ OS-specific files
+# macOS & Linux files
 .DS_Store
 Thumbs.db
 
-# ✅ Local Python virtual environment
-/Ml_env/
-Ml_env/
+# # Logs and outputs
+# output/*.csv
+# output/*.png
+# output/*.pdf
+# output/*.html
+
+# Sample/testing scripts
+sample_logs.py
+
+# Compiled files
+*.log
+*.out
+
+# Windows-specific junk
+ehthumbs.db
+Desktop.ini
