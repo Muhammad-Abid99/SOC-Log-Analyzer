@@ -9,7 +9,7 @@ __pycache__/
 # C extensions
 *.so
 
-# Environment
+# Environment folders
 .env
 .venv/
 env/
@@ -29,11 +29,9 @@ Ml_env/
 .DS_Store
 Thumbs.db
 
-# # Logs and outputs
-# output/*.csv
-# output/*.png
-# output/*.pdf
-# output/*.html
+# Windows-specific junk
+ehthumbs.db
+Desktop.ini
 
 # Sample/testing scripts
 sample_logs.py
@@ -42,6 +40,36 @@ sample_logs.py
 *.log
 *.out
 
-# Windows-specific junk
-ehthumbs.db
-Desktop.ini
+# -------------
+# DATA folder - track folder and .gitkeep but ignore sensitive files
+# -------------
+
+# Ignore raw EVTX logs or any sensitive files in data/
+data/*.evtx
+data/*_sensitive_*.csv
+data/private_logs/
+data/*.log
+
+# But do NOT ignore the .gitkeep file inside data/ (keep folder tracked)
+!data/.gitkeep
+
+# -------------
+# OUTPUT folder - track folder and .gitkeep but ignore sensitive raw data files
+# -------------
+
+# Ignore raw data files, parsed csv, or reports you consider sensitive
+output/*.evtx
+output/*_sensitive_*.csv
+output/*.log
+output/parsed_security_logs.csv
+
+
+# You may want to keep images and reports? Uncomment if you want to ignore them too:
+# output/*.png
+# output/*.html
+# output/*.pdf
+
+# Keep the .gitkeep so output folder is tracked even if empty
+!output/.gitkeep
+
+# End of .gitignore
