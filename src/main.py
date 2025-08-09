@@ -9,6 +9,7 @@ from windows_parser import parse_evtx_to_csv
 from analyzer import run_threat_detection
 from report.report_generator import generate_html_report, generate_pdf_from_html
 from report.report_text import generate_text_report
+from log_stats import generate_log_stats  # ✅ NEW import
 import yaml
 import os
 
@@ -23,7 +24,8 @@ def main():
     parser.add_argument('--parse', action='store_true', help='Parse EVTX log to CSV')
     parser.add_argument('--analyze', action='store_true', help='Run threat detection')
     parser.add_argument('--report', action='store_true', help='Generate all reports')
-    parser.add_argument('--all', action='store_true', help='Run full pipeline: parse + analyze + report')
+    parser.add_argument('--stats', action='store_true', help='Show log statistics from parsed CSV')  # ✅ NEW
+    parser.add_argument('--all', action='store_true', help='Run full pipeline: parse + analyze + report + stats')
 
     args = parser.parse_args()
     config = load_config()
@@ -32,6 +34,11 @@ def main():
         print("📥 Parsing EVTX log file...")
         parse_evtx_to_csv(config["input_evtx"], config["parsed_csv"])
         print("✅ Parsing complete.\n")
+
+    if args.stats or args.all:  # ✅ NEW
+        print("📊 Generating Log Statistics...")
+        generate_log_stats(config["parsed_csv"])
+        print("✅ Log statistics complete.\n")
 
     if args.analyze or args.all:
         print("🔍 Running Threat Detection Rules...")
@@ -48,6 +55,7 @@ def main():
     if not any(vars(args).values()):
         parser.print_help()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
