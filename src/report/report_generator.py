@@ -333,7 +333,7 @@ def generate_full_report(
 
 
 if __name__ == "__main__":
-    # Quick local smoke test when executed directly (non-production)
+    # Quick local stest when executed directly (non-production)
     logging.basicConfig(level=logging.INFO)
     sample_csv = Path("output/parsed_security_logs.csv")
     if not sample_csv.exists():
