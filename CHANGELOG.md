@@ -10,6 +10,27 @@ This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.
 
 ---
 
+## [v0.3.0] - 2025-08-11
+### Added
+- 📝 Complete report generation modules with support for:
+  - Enhanced **text summary reports** including dynamic timestamps, alerts, and anomaly info (`report_text.py`)
+  - **HTML and PDF reports** generated via `report_generator.py` without separate templates folder
+- ⚙️ Updated CLI (`main.py`) to support `--report` and `--all` flags for seamless report workflow
+- 📄 Updated `README.md` with accurate usage instructions, project structure, and privacy notes
+- 🛠️ Refined `config.yaml` for improved configuration of report paths and settings
+- 📦 Updated `requirements.txt` with all necessary dependencies for current functionality
+- 🔒 Strengthened `.gitignore` rules to exclude sensitive raw data, parsed CSVs, and report outputs
+
+### Changed
+- ♻️ Modularized and improved codebase structure under `src/report/` for maintainability and scalability
+- 🧹 Cleaned up deprecated `templates/` folder references and removed Jinja2 dependency
+- 📝 Enhanced text report formatting for better readability and professional output style
+
+### Fixed
+- 🐛 Resolved minor bugs and edge cases in report generation and CLI integration
+
+---
+
 ## [v0.2.0] - 2025-08-09
 ### Added
 - 🚀 **MVP Threat Detection CLI** now functional with following detection modules:
@@ -46,5 +67,4 @@ This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.
 ## 💼 Project Stage
 
 🔐 Real-World SOC Tool — **MVP Functional**  
-📈 Goal: Investor-ready, sustainable security product
-s
+📈 Goal: Investor-ready, sustainable cybersecurity solution
