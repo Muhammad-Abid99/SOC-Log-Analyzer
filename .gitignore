@@ -62,12 +62,13 @@ output/*.evtx
 output/*_sensitive_*.csv
 output/*.log
 output/parsed_security_logs.csv
+output/reports/
 
 
 # You may want to keep images and reports? Uncomment if you want to ignore them too:
-# output/*.png
-# output/*.html
-# output/*.pdf
+output/*.png
+output/*.html
+output/*.pdf
 
 # Keep the .gitkeep so output folder is tracked even if empty
 !output/.gitkeep
