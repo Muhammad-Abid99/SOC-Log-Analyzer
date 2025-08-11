@@ -2,3 +2,14 @@
 SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 SPDX-License-Identifier: Apache-2.0
 -->
+
+# Requires Python 3.10+
+
+pandas==1.5.3
+numpy==1.24.3
+matplotlib==3.7.1
+seaborn==0.12.2
+pyyaml==6.0
+pdfkit==1.0.0
+python-dateutil==2.8.2
+pywin32==305

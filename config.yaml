@@ -7,7 +7,7 @@ parsed_csv: "output/parsed_security_logs.csv"        # CSV output after parsing
 
 # 📝 Report Paths
 text_report: "output/log_summary.txt"                # Plain text summary report
-html_report: "output/log_analysis_report.html"       # HTML report (Jinja2)
+html_report: "output/log_analysis_report.html"       # HTML report
 pdf_report: "output/log_analysis_report.pdf"         # PDF report (from HTML)
 
 # ⏰ Working Hours (for unusual logon detection)
@@ -19,8 +19,20 @@ working_hours:
 visuals:
   save_dir: "output/"
 
+# 📈 Chart Image Paths (relative to project root or absolute)
+chart_paths:
+  - "output/event_id_distribution.png"
+  - "output/logons_by_hour.png"
+  - "output/logons_by_weekday.png"
+  - "output/success_vs_failed_logons.png"
+  - "output/user_activity_heatmap.png"
+  - "output/logon_spike_timeseries.png"
+
 # ⚙️ Parsing Controller
-parse_limit: 100     # Number of logs to parse (set to 0 for no limit)
+parse_limit: 1000     # Number of logs to parse (set to 0 for no limit)
+
+# 🖨️ PDF Conversion Tool (optional)
+wkhtmltopdf_path: null   # Set to system path if wkhtmltopdf is installed
 
 # 🔐 Reserved for future use (SIEM, auth, etc.)
 # api_keys:
