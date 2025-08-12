@@ -1,5 +1,3 @@
-# src/detectors/brute_force_detector.py
-
 # SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
@@ -16,13 +14,13 @@ def detect(df):
     grouped = (
         failed_logons.groupby(["IpAddress", "TargetUserName"])
         .size()
-        .reset_index(name="Count")
+        .reset_index(name="count")
     )
 
     for _, row in grouped.iterrows():
         ip = row["IpAddress"]
         user = row["TargetUserName"]
-        count = row["Count"]
+        count = row["count"]
 
         if pd.notna(ip) and count >= 5:
             alerts.append({
