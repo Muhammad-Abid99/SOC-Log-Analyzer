@@ -1,40 +1,65 @@
 # SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# src/detector_manager.py
-# Loads and manages all threat detection modules
+import logging
 
-from detectors import brute_force_detector
-from detectors import new_user_creation_detector
-from detectors import privileged_logon_detector
-from detectors import unusual_logon_time_detector
+from detectors import (
+    brute_force_detector,
+    new_user_creation_detector,
+    privileged_logon_detector,
+    unusual_logon_time_detector,
+    account_lockout_detector
+)
+
+logger = logging.getLogger(__name__)
+
+# Map detector keys to modules for easy lookup
+DETECTOR_MAP = {
+    "brute_force": brute_force_detector,
+    "new_user_creation": new_user_creation_detector,
+    "privileged_logon": privileged_logon_detector,
+    "unusual_logon_time": unusual_logon_time_detector,
+    "account_lockout": account_lockout_detector,
+}
 
 def run_all_detectors(df):
+    """Run all detectors on the dataframe."""
+    all_alerts = []
+    for name, detector in [
+        ("Brute Force Detector", brute_force_detector),
+        ("New User Creation Detector", new_user_creation_detector),
+        ("Privileged Logon Detector", privileged_logon_detector),
+        ("Unusual Logon Time Detector", unusual_logon_time_detector),
+        ("Account Lockout Detector", account_lockout_detector),
+    ]:
+        try:
+            alerts = detector.detect(df)
+            if alerts:
+                logger.info(f"{name} found {len(alerts)} alert(s).")
+                all_alerts.extend(alerts)
+            else:
+                logger.info(f"{name} found no alerts.")
+        except Exception as e:
+            logger.error(f"Error running {name}: {e}", exc_info=True)
+    return all_alerts
+
+def run_selected_detectors(df, detector_keys):
     """
-    Run all registered detection modules on the parsed log DataFrame.
-
-    Args:
-        df (pd.DataFrame): Parsed event log data
-
-    Returns:
-        list of str: Collected alert messages from all detectors
+    Run only the specified detectors by keys on the dataframe.
     """
     all_alerts = []
-
-    # Brute Force Detection (Event ID 4625)
-    brute_force_alerts = brute_force_detector.detect(df)
-    all_alerts.extend(brute_force_alerts)
-
-    # New User Account Creation (Event ID 4720)
-    user_creation_alerts = new_user_creation_detector.detect(df)
-    all_alerts.extend(user_creation_alerts)
-
-    # Privileged Logon Detection (Event ID 4672)
-    privileged_alerts = privileged_logon_detector.detect(df)
-    all_alerts.extend(privileged_alerts)
-
-    # Unusual Logon Times (Event ID 4624)
-    unusual_time_alerts = unusual_logon_time_detector.detect(df)
-    all_alerts.extend(unusual_time_alerts)
-
+    for key in detector_keys:
+        detector = DETECTOR_MAP.get(key)
+        if not detector:
+            logger.warning(f"Detector key '{key}' not recognized.")
+            continue
+        try:
+            alerts = detector.detect(df)
+            if alerts:
+                logger.info(f"{key} detector found {len(alerts)} alert(s).")
+                all_alerts.extend(alerts)
+            else:
+                logger.info(f"{key} detector found no alerts.")
+        except Exception as e:
+            logger.error(f"Error running {key} detector: {e}", exc_info=True)
     return all_alerts
