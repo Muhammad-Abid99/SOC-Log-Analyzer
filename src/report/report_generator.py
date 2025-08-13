@@ -139,7 +139,13 @@ def _build_summary(df: pd.DataFrame, detectors_results: Optional[List[Any]] = No
     return summary
 
 
-def _generate_html_report(summary: Dict[str, Any], charts_data_uris: List[Dict[str, str]], metadata: Dict[str, Any], generated_at: Optional[str] = None) -> str:
+def _generate_html_report(
+    summary: Dict[str, Any],
+    charts_data_uris: List[Dict[str, str]],
+    metadata: Dict[str, Any],
+    detectors_results: Optional[List[Any]] = None,  # <-- Added detectors_results param here
+    generated_at: Optional[str] = None,
+) -> str:
     """Return HTML string for the report. charts_data_uris: list of {'title': str, 'data_uri': str} dicts."""
     if not generated_at:
         generated_at = datetime.utcnow().isoformat() + "Z"
@@ -213,6 +219,21 @@ def _generate_html_report(summary: Dict[str, Any], charts_data_uris: List[Dict[s
             html_parts.append(f"<tr><td>{_safe_str(sev)}</td><td>{_safe_str(cnt)}</td></tr>")
         html_parts.append("</tbody></table>")
 
+        # New section: Alerts Details with expanded info
+        if detectors_results:
+            html_parts.append("<h2>Alerts Details</h2>")
+            for i, alert in enumerate(detectors_results, 1):
+                html_parts.append(f"<div><strong>{i}. {alert.get('type', 'Alert')}</strong><br>")
+                for key, val in alert.items():
+                    if key == 'type':
+                        continue
+                    if isinstance(val, (list, dict)):
+                        val_str = json.dumps(val, indent=2)
+                        html_parts.append(f"<pre>{val_str}</pre>")
+                    else:
+                        html_parts.append(f"<strong>{key}:</strong> {_safe_str(val)}<br>")
+                html_parts.append("</div><hr>")
+
     # Charts
     if charts_data_uris:
         html_parts.append("<h2>Visualizations</h2>")
@@ -277,7 +298,13 @@ def generate_full_report(
 
     # Build HTML
     metadata = {"project": "SOC-Log-Analyzer", "generated_at": datetime.utcnow().isoformat() + "Z"}
-    html_str = _generate_html_report(summary, charts_data_uris, metadata, generated_at=metadata["generated_at"])
+    html_str = _generate_html_report(
+        summary,
+        charts_data_uris,
+        metadata,
+        detectors_results=detectors_results,  # <-- pass detectors_results here
+        generated_at=metadata["generated_at"],
+    )
 
     html_path = output_dir / html_report_name
     try:
@@ -333,7 +360,7 @@ def generate_full_report(
 
 
 if __name__ == "__main__":
-    # Quick local stest when executed directly (non-production)
+    # Quick local test when executed directly (non-production)
     logging.basicConfig(level=logging.INFO)
     sample_csv = Path("output/parsed_security_logs.csv")
     if not sample_csv.exists():

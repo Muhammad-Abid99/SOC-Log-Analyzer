@@ -72,4 +72,6 @@ output/*.pdf
 # Keep the .gitkeep so output folder is tracked even if empty
 !output/.gitkeep
 
+src/utils.py
+
 # End of .gitignore
