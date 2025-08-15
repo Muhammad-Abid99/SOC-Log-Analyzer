@@ -4,21 +4,30 @@
 """
 src/report/report_generator.py
 
-Template-free report generator for SOC-Log-Analyzer.
-- Generates an HTML report (no Jinja2 templates)
-- Embeds chart images as Base64 so the HTML/PDF is self-contained
-- Optionally generates a PDF using pdfkit/wkhtmltopdf (if installed)
-- Produces a small JSON/text summary and returns metadata for downstream use
+Production-ready, template-free report generator for SOC-Log-Analyzer.
 
-Design goals:
-- Production-ready: clear logging, robust error handling, minimal external deps
-- Safe defaults: skip PDF generation if pdfkit or wkhtmltopdf not available
-- Flexible: accepts raw pandas DataFrame, detector results, and chart paths
+Key features (MVP-ready for investors/CISOs):
+- Executive summary with totals, time range, hosts
+- Severity breakdown (counts)
+- Grouped Alerts table (Alert Type | User | Severity | Count | First/Last Seen)
+- Appendix with full raw alerts
+- Optional charts embedded as Base64 (self-contained HTML/PDF)
+- Optional anonymization of identities (users) for safe sharing
+- Robust PDF generation via pdfkit/wkhtmltopdf (if available)
+- Backward compatible with existing callers:
+    - If only detectors_results (raw) is provided → auto-groups internally.
+    - If grouped_alerts is also provided → uses it directly.
 
-Usage:
+Usage example:
 from report.report_generator import generate_full_report
-result = generate_full_report(parsed_df=df, detectors_results=detectors_results, chart_paths=chart_paths, output_dir=Path('output'))
-
+out = generate_full_report(
+    parsed_df=df,
+    detectors_results=alerts_raw,
+    grouped_alerts=alerts_grouped,         # optional
+    chart_paths=["output/charts/severity.png"],
+    output_dir=Path("output/reports"),
+    anonymize=False
+)
 """
 
 import os
@@ -26,8 +35,9 @@ import base64
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import json
+from collections import defaultdict
 
 import pandas as pd
 
@@ -41,6 +51,9 @@ except Exception:
 logger = logging.getLogger("report_generator")
 
 
+# -----------------------
+# Filesystem helpers
+# -----------------------
 def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
@@ -62,21 +75,168 @@ def _file_to_data_uri(path: Path) -> Optional[str]:
 
 def _safe_str(v: Any) -> str:
     try:
-        return str(v)
+        return "" if v is None else str(v)
     except Exception:
         return ""
 
 
-def _build_summary(df: pd.DataFrame, detectors_results: Optional[List[Any]] = None, stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Build a concise executive summary (dict) from the parsed DataFrame and detectors results."""
+# -----------------------
+# Anonymization helpers
+# -----------------------
+def _anonymize_identity(name: Optional[str], mapping: Dict[str, str], prefix: str = "User") -> str:
+    if not name or str(name).strip() in {"", "Unknown", "None"}:
+        return "Unknown"
+    s = str(name)
+    if s not in mapping:
+        mapping[s] = f"{prefix}-{len(mapping)+1}"
+    return mapping[s]
+
+
+def _anonymize_top_users(top_users: Dict[str, int], mapping: Dict[str, str]) -> Dict[str, int]:
+    if not top_users:
+        return {}
+    anonymized: Dict[str, int] = {}
+    for user, cnt in top_users.items():
+        alias = _anonymize_identity(user, mapping, prefix="User")
+        anonymized[alias] = anonymized.get(alias, 0) + int(cnt)
+    return anonymized
+
+
+def _anonymize_grouped_alerts(grouped_alerts: List[Dict[str, Any]], mapping: Dict[str, str]) -> List[Dict[str, Any]]:
+    out = []
+    for g in grouped_alerts or []:
+        g2 = dict(g)
+        g2["user"] = _anonymize_identity(g2.get("user"), mapping, prefix="User")
+        out.append(g2)
+    return out
+
+
+# -----------------------
+# Grouping & severity helpers (fallback if caller didn't supply groups)
+# -----------------------
+def _normalize_timestamp(alert: Dict[str, Any]) -> Optional[pd.Timestamp]:
+    # common keys: 'timestamp', 'TimeCreated'
+    val = alert.get("timestamp") or alert.get("TimeCreated")
+    if not val:
+        return None
+    try:
+        return pd.to_datetime(val, errors="coerce")
+    except Exception:
+        return None
+
+
+def _infer_severity(alert: Dict[str, Any]) -> str:
+    """Fallback severity if detectors didn't set one."""
+    # Prefer provided severity
+    s = alert.get("severity")
+    if s:
+        return str(s)
+
+    # Heuristic fallback based on EventID/type
+    event_id = alert.get("EventID")
+    a_type = str(alert.get("type", "")).lower()
+
+    if event_id == 4625 and int(alert.get("count", 1)) >= 5:
+        return "Critical"
+    if event_id == 4720:
+        return "Critical"
+    if event_id == 4672:
+        return "High"
+    if "unusual logon time" in a_type:
+        return "Medium"
+    if "account lockout" in a_type:
+        return "High"
+    return "Low"
+
+
+def _group_alerts_fallback(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    If the caller did not pass grouped_alerts, we compute groups here.
+    Group by (type, user, severity). Track count, first_seen, last_seen, EventID.
+    """
+    grouped = defaultdict(lambda: {
+        "type": None,
+        "user": None,
+        "severity": None,
+        "count": 0,
+        "first_seen": None,
+        "last_seen": None,
+        "EventID": None
+    })
+
+    for alert in alerts or []:
+        if not isinstance(alert, dict):
+            continue
+
+        a_type = alert.get("type", "Alert")
+        user = alert.get("user") or alert.get("TargetUserName") or "Unknown"
+        sev = _infer_severity(alert)
+        event_id = alert.get("EventID")
+        ts = _normalize_timestamp(alert)
+
+        key = (a_type, user, sev)
+        g = grouped[key]
+        if g["count"] == 0:
+            g["type"] = a_type
+            g["user"] = user
+            g["severity"] = sev
+            g["EventID"] = event_id
+
+        g["count"] += 1
+        if ts is not None:
+            if g["first_seen"] is None or ts < g["first_seen"]:
+                g["first_seen"] = ts
+            if g["last_seen"] is None or ts > g["last_seen"]:
+                g["last_seen"] = ts
+
+    # ISOify timestamps
+    out = []
+    for g in grouped.values():
+        if isinstance(g["first_seen"], pd.Timestamp):
+            g["first_seen"] = g["first_seen"].isoformat()
+        if isinstance(g["last_seen"], pd.Timestamp):
+            g["last_seen"] = g["last_seen"].isoformat()
+        out.append(g)
+    return out
+
+
+def _compute_severity_counts(grouped_alerts: List[Dict[str, Any]], raw_alerts: Optional[List[Dict[str, Any]]]) -> Dict[str, int]:
+    """
+    Severity counts:
+    - Prefer grouped_alerts (count-weighted).
+    - Fallback to raw_alerts (per-alert).
+    """
+    counts: Dict[str, int] = {}
+    if grouped_alerts:
+        for g in grouped_alerts:
+            sev = str(g.get("severity", "Unknown"))
+            counts[sev] = counts.get(sev, 0) + int(g.get("count", 1))
+        return counts
+
+    # fallback if no groups provided
+    for a in raw_alerts or []:
+        sev = str(a.get("severity") or _infer_severity(a))
+        counts[sev] = counts.get(sev, 0) + 1
+    return counts
+
+
+# -----------------------
+# Summary builder
+# -----------------------
+def _build_summary(
+    df: pd.DataFrame,
+    detectors_results: Optional[List[Any]] = None,
+    stats: Optional[Dict[str, Any]] = None,
+    grouped_alerts: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Build a concise executive summary (dict) from the parsed DataFrame and detector outputs."""
     summary: Dict[str, Any] = {}
 
     summary["total_logs"] = int(len(df))
 
     # Timespan
     if "TimeCreated" in df.columns:
-        times = pd.to_datetime(df["TimeCreated"], errors="coerce")
-        times = times.dropna()
+        times = pd.to_datetime(df["TimeCreated"], errors="coerce").dropna()
         if len(times) > 0:
             summary["start_time"] = times.min().isoformat()
             summary["end_time"] = times.max().isoformat()
@@ -101,36 +261,27 @@ def _build_summary(df: pd.DataFrame, detectors_results: Optional[List[Any]] = No
     # Top EventIDs
     if "EventID" in df.columns:
         ev_counts = df["EventID"].value_counts().head(10)
-        summary["top_event_ids"] = ev_counts.to_dict()
+        summary["top_event_ids"] = {int(k): int(v) for k, v in ev_counts.to_dict().items()}
     else:
         summary["top_event_ids"] = {}
 
-    # Top Users (try common column names)
+    # Top Users (common columns)
     user_cols = [c for c in ("TargetUserName", "SubjectUserName", "AccountName", "TargetUser", "UserName") if c in df.columns]
     if user_cols:
-        # prefer TargetUserName then SubjectUserName
         uc = user_cols[0]
-        summary["top_users"] = df[uc].value_counts().head(10).to_dict()
+        vc = df[uc].value_counts().head(10)
+        # normalize to str keys
+        summary["top_users"] = {str(k): int(v) for k, v in vc.to_dict().items()}
     else:
         summary["top_users"] = {}
 
-    # Detection summary
-    if detectors_results:
-        # detectors_results is expected to be a list of dict-like alerts or strings
-        summary["alerts_count"] = len(detectors_results)
-        # try to build severity counts if alerts expose 'severity' key
-        sev_counts: Dict[str, int] = {}
-        for a in detectors_results:
-            if isinstance(a, dict) and a.get("severity"):
-                sev = str(a.get("severity"))
-            else:
-                # fallback - put all into 'info' bucket
-                sev = "info"
-            sev_counts[sev] = sev_counts.get(sev, 0) + 1
-        summary["alerts_by_severity"] = sev_counts
-    else:
-        summary["alerts_count"] = 0
-        summary["alerts_by_severity"] = {}
+    # Detections
+    total_alerts = len(detectors_results or [])
+    summary["alerts_count"] = total_alerts
+
+    # Severity counts (prefer grouped)
+    sev_counts = _compute_severity_counts(grouped_alerts or [], detectors_results or [])
+    summary["alerts_by_severity"] = sev_counts
 
     # pass-through stats if provided
     if stats:
@@ -139,45 +290,67 @@ def _build_summary(df: pd.DataFrame, detectors_results: Optional[List[Any]] = No
     return summary
 
 
+# -----------------------
+# HTML rendering helpers
+# -----------------------
+def _severity_badge_html(sev: str) -> str:
+    """Small colored badge for severity."""
+    s = (sev or "").lower()
+    color = "#9ca3af"  # gray (Unknown/Info)
+    if s in ("critical",):
+        color = "#dc2626"  # red-600
+    elif s in ("high",):
+        color = "#ea580c"  # orange-600
+    elif s in ("medium",):
+        color = "#d97706"  # amber-600
+    elif s in ("low",):
+        color = "#2563eb"  # blue-600
+    return f"<span style='display:inline-block;padding:2px 8px;border-radius:12px;background:{color};color:white;font-size:12px'>{sev}</span>"
+
+
 def _generate_html_report(
     summary: Dict[str, Any],
     charts_data_uris: List[Dict[str, str]],
     metadata: Dict[str, Any],
-    detectors_results: Optional[List[Any]] = None,  # <-- Added detectors_results param here
+    detectors_results: Optional[List[Dict[str, Any]]] = None,
+    grouped_alerts: Optional[List[Dict[str, Any]]] = None,
     generated_at: Optional[str] = None,
 ) -> str:
-    """Return HTML string for the report. charts_data_uris: list of {'title': str, 'data_uri': str} dicts."""
+    """Return HTML string for the report."""
     if not generated_at:
         generated_at = datetime.utcnow().isoformat() + "Z"
 
-    # Minimal, clean CSS for readability (responsive images)
     css = """
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 20px; color: #111; }
     .container { max-width: 1100px; margin: 0 auto; }
     h1 { font-size: 24px; margin-bottom: 0; }
+    h2 { margin-top: 22px; }
     .meta { color: #666; margin-top: 4px; margin-bottom: 20px; }
     .kpis { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
     .kpi { background:#f7f9fc; padding:12px; border-radius:8px; min-width:140px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
     table { border-collapse: collapse; width:100%; margin-bottom:18px; }
-    th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
+    th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; vertical-align: top; }
+    .muted { color:#666; }
     .chart { margin:16px 0; text-align:center; }
     img.chart-img { width:100%; max-width:900px; height:auto; display:block; margin:0 auto; }
     .footer { margin-top:30px; font-size:12px; color:#666; }
+    .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#eef2ff; }
+    pre { background:#0b1020; color:#d1e7ff; padding:10px; border-radius:6px; overflow:auto; }
     """
 
-    # Build HTML
     html_parts = [
         "<!doctype html>",
         "<html>",
         "<head>",
-        f"<meta charset='utf-8'>",
-        f"<meta name='viewport' content='width=device-width, initial-scale=1'>",
-        f"<title>SOC Log Analysis Report</title>",
+        "<meta charset='utf-8'>",
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+        "<title>SOC Log Analysis Report</title>",
         f"<style>{css}</style>",
         "</head>",
         "<body>",
         "<div class='container'>",
-        f"<h1>SOC Log Analysis Report</h1>",
+        "<h1>SOC Log Analysis Report</h1>",
         f"<div class='meta'>Generated: {generated_at} • Source: SOC-Log-Analyzer</div>",
         "<div class='kpis'>",
         f"<div class='kpi'><strong>Total logs</strong><div>{summary.get('total_logs', 0)}</div></div>",
@@ -187,52 +360,72 @@ def _generate_html_report(
         "</div>",
     ]
 
-    # Top event IDs
+    # Severity breakdown
+    sev_counts = summary.get("alerts_by_severity", {}) or {}
+    if sev_counts:
+        html_parts.append("<h2>Severity Breakdown</h2>")
+        html_parts.append("<table>")
+        html_parts.append("<thead><tr><th>Severity</th><th>Count</th></tr></thead><tbody>")
+        # deterministic order
+        order = ["Critical", "High", "Medium", "Low", "Info", "Unknown"]
+        seen = set()
+        for sev in order:
+            if sev in sev_counts:
+                html_parts.append(f"<tr><td>{_severity_badge_html(sev)}</td><td>{_safe_str(sev_counts[sev])}</td></tr>")
+                seen.add(sev)
+        for sev, cnt in sev_counts.items():
+            if sev not in seen:
+                html_parts.append(f"<tr><td>{_severity_badge_html(sev)}</td><td>{_safe_str(cnt)}</td></tr>")
+        html_parts.append("</tbody></table>")
+
+    # Top event IDs and Top users side by side
     top_evs = summary.get("top_event_ids", {})
-    if top_evs:
-        html_parts.append("<h2>Top Event IDs</h2>")
-        html_parts.append("<table>")
-        html_parts.append("<thead><tr><th>Event ID</th><th>Count</th></tr></thead>")
-        html_parts.append("<tbody>")
-        for ev, cnt in top_evs.items():
-            html_parts.append(f"<tr><td>{_safe_str(ev)}</td><td>{_safe_str(cnt)}</td></tr>")
-        html_parts.append("</tbody></table>")
-
-    # Top users
     top_users = summary.get("top_users", {})
-    if top_users:
-        html_parts.append("<h2>Top Accounts</h2>")
-        html_parts.append("<table>")
-        html_parts.append("<thead><tr><th>Account</th><th>Count</th></tr></thead>")
-        html_parts.append("<tbody>")
-        for u, cnt in top_users.items():
-            html_parts.append(f"<tr><td>{_safe_str(u)}</td><td>{_safe_str(cnt)}</td></tr>")
-        html_parts.append("</tbody></table>")
+    if top_evs or top_users:
+        html_parts.append("<div class='grid-2'>")
+        # Top Event IDs
+        html_parts.append("<div>")
+        if top_evs:
+            html_parts.append("<h2>Top Event IDs</h2><table><thead><tr><th>Event ID</th><th>Count</th></tr></thead><tbody>")
+            for ev, cnt in top_evs.items():
+                html_parts.append(f"<tr><td>{_safe_str(ev)}</td><td>{_safe_str(cnt)}</td></tr>")
+            html_parts.append("</tbody></table>")
+        else:
+            html_parts.append("<h2>Top Event IDs</h2><div class='muted'>No data</div>")
+        html_parts.append("</div>")
 
-    # Alerts summary
-    if summary.get("alerts_count", 0) > 0:
-        html_parts.append("<h2>Alerts Summary</h2>")
-        html_parts.append("<table>")
-        html_parts.append("<thead><tr><th>Severity</th><th>Count</th></tr></thead>")
-        html_parts.append("<tbody>")
-        for sev, cnt in summary.get("alerts_by_severity", {}).items():
-            html_parts.append(f"<tr><td>{_safe_str(sev)}</td><td>{_safe_str(cnt)}</td></tr>")
-        html_parts.append("</tbody></table>")
+        # Top Accounts
+        html_parts.append("<div>")
+        if top_users:
+            html_parts.append("<h2>Top Accounts</h2><table><thead><tr><th>Account</th><th>Count</th></tr></thead><tbody>")
+            for u, cnt in top_users.items():
+                html_parts.append(f"<tr><td>{_safe_str(u)}</td><td>{_safe_str(cnt)}</td></tr>")
+            html_parts.append("</tbody></table>")
+        else:
+            html_parts.append("<h2>Top Accounts</h2><div class='muted'>No data</div>")
+        html_parts.append("</div>")
+        html_parts.append("</div>")  # grid-2
 
-        # New section: Alerts Details with expanded info
-        if detectors_results:
-            html_parts.append("<h2>Alerts Details</h2>")
-            for i, alert in enumerate(detectors_results, 1):
-                html_parts.append(f"<div><strong>{i}. {alert.get('type', 'Alert')}</strong><br>")
-                for key, val in alert.items():
-                    if key == 'type':
-                        continue
-                    if isinstance(val, (list, dict)):
-                        val_str = json.dumps(val, indent=2)
-                        html_parts.append(f"<pre>{val_str}</pre>")
-                    else:
-                        html_parts.append(f"<strong>{key}:</strong> {_safe_str(val)}<br>")
-                html_parts.append("</div><hr>")
+    # Grouped Alerts Summary
+    if grouped_alerts:
+        html_parts.append("<h2>Grouped Alerts Summary</h2>")
+        html_parts.append("<table>")
+        html_parts.append("<thead><tr><th>Alert Type</th><th>User</th><th>Severity</th><th>Count</th><th>First Seen</th><th>Last Seen</th></tr></thead>")
+        html_parts.append("<tbody>")
+        for g in grouped_alerts:
+            html_parts.append(
+                "<tr>"
+                f"<td>{_safe_str(g.get('type','Alert'))}</td>"
+                f"<td>{_safe_str(g.get('user','Unknown'))}</td>"
+                f"<td>{_severity_badge_html(_safe_str(g.get('severity','Unknown')))}</td>"
+                f"<td>{_safe_str(g.get('count',1))}</td>"
+                f"<td>{_safe_str(g.get('first_seen','N/A'))}</td>"
+                f"<td>{_safe_str(g.get('last_seen','N/A'))}</td>"
+                "</tr>"
+            )
+        html_parts.append("</tbody></table>")
+    else:
+        html_parts.append("<h2>Grouped Alerts Summary</h2><div class='muted'>No alerts triggered.</div>")
 
     # Charts
     if charts_data_uris:
@@ -240,27 +433,51 @@ def _generate_html_report(
         for c in charts_data_uris:
             title = c.get("title") or "Chart"
             data_uri = c.get("data_uri")
-            html_parts.append(f"<div class='chart'><h3>{title}</h3>")
+            html_parts.append(f"<div class='chart'><h3>{_safe_str(title)}</h3>")
             if data_uri:
-                html_parts.append(f"<img class='chart-img' src='{data_uri}' alt='{title}' />")
+                html_parts.append(f"<img class='chart-img' src='{data_uri}' alt='{_safe_str(title)}' />")
             else:
-                html_parts.append(f"<div>Chart unavailable</div>")
+                html_parts.append("<div class='muted'>Chart unavailable</div>")
             html_parts.append("</div>")
+
+    # Appendix (raw alerts)
+    if detectors_results:
+        html_parts.append("<h2>Appendix: Full Raw Alerts</h2>")
+        for i, alert in enumerate(detectors_results, 1):
+            if not isinstance(alert, dict):
+                html_parts.append(f"<div><strong>{i}. Alert</strong><br><pre>{_safe_str(alert)}</pre></div><hr>")
+                continue
+            html_parts.append(f"<div><strong>{i}. {_safe_str(alert.get('type','Alert'))}</strong><br>")
+            for key, val in alert.items():
+                if key == 'type':
+                    continue
+                if isinstance(val, (list, dict)):
+                    try:
+                        val_str = json.dumps(val, indent=2, default=str)
+                    except Exception:
+                        val_str = _safe_str(val)
+                    html_parts.append(f"<strong>{_safe_str(key)}:</strong><pre>{val_str}</pre>")
+                else:
+                    html_parts.append(f"<strong>{_safe_str(key)}:</strong> {_safe_str(val)}<br>")
+            html_parts.append("</div><hr>")
 
     # Footer / metadata
     html_parts.append("<div class='footer'>")
-    html_parts.append(f"Generated by SOC-Log-Analyzer • {_safe_str(metadata.get('project', 'unknown'))} \n")
+    html_parts.append(f"Generated by SOC-Log-Analyzer • {_safe_str(metadata.get('project', 'unknown'))}")
     html_parts.append("</div>")
 
-    html_parts.append("</div>")
+    html_parts.append("</div>")  # container
     html_parts.append("</body></html>")
 
     return "\n".join(html_parts)
 
 
+# -----------------------
+# Public API
+# -----------------------
 def generate_full_report(
     parsed_df: pd.DataFrame,
-    detectors_results: Optional[List[Any]] = None,
+    detectors_results: Optional[List[Dict[str, Any]]] = None,
     stats: Optional[Dict[str, Any]] = None,
     chart_paths: Optional[List[str]] = None,
     output_dir: Optional[Path] = Path("output"),
@@ -269,18 +486,16 @@ def generate_full_report(
     html_report_name: str = "log_analysis_report.html",
     pdf_report_name: str = "log_analysis_report.pdf",
     text_report_name: str = "log_summary.txt",
+    grouped_alerts: Optional[List[Dict[str, Any]]] = None,  # NEW: optional, but backward-compatible
 ) -> Dict[str, Any]:
     """
     Main entrypoint to produce a template-free HTML (and optional PDF) report.
 
-    Returns a dict with keys: out_dir, html_path, pdf_path (or None), text_report_path, summary
+    Returns a dict with keys: out_dir, html_path, pdf_path (or None), text_report_path, summary, charts_included
     """
 
     output_dir = Path(output_dir)
     _ensure_dir(output_dir)
-
-    # Build executive summary
-    summary = _build_summary(parsed_df, detectors_results, stats)
 
     # Prepare chart data URIs
     charts_data_uris: List[Dict[str, str]] = []
@@ -296,16 +511,35 @@ def generate_full_report(
             except Exception as e:
                 logger.exception("Failed to include chart %s: %s", p, e)
 
-    # Build HTML
+    # If grouped_alerts not supplied, build them from detectors_results
+    if grouped_alerts is None and detectors_results:
+        try:
+            grouped_alerts = _group_alerts_fallback(detectors_results)
+        except Exception:
+            logger.exception("Failed to group alerts; proceeding without groups.")
+            grouped_alerts = []
+
+    # Build executive summary (uses grouped_alerts for severity counts)
+    summary = _build_summary(parsed_df, detectors_results, stats, grouped_alerts)
+
+    # Optional anonymization (top_users + grouped_alerts user field)
+    if anonymize:
+        alias_map: Dict[str, str] = {}
+        summary["top_users"] = _anonymize_top_users(summary.get("top_users", {}), alias_map)
+        grouped_alerts = _anonymize_grouped_alerts(grouped_alerts or [], alias_map)
+
+    # HTML assembly
     metadata = {"project": "SOC-Log-Analyzer", "generated_at": datetime.utcnow().isoformat() + "Z"}
     html_str = _generate_html_report(
-        summary,
-        charts_data_uris,
-        metadata,
-        detectors_results=detectors_results,  # <-- pass detectors_results here
+        summary=summary,
+        charts_data_uris=charts_data_uris,
+        metadata=metadata,
+        detectors_results=detectors_results,
+        grouped_alerts=grouped_alerts,
         generated_at=metadata["generated_at"],
     )
 
+    # Write HTML
     html_path = output_dir / html_report_name
     try:
         with open(html_path, "w", encoding="utf-8") as f:
@@ -315,7 +549,7 @@ def generate_full_report(
         logger.exception("Failed to write HTML report: %s", e)
         raise
 
-    # Write JSON summary and text summary
+    # Write text summary (kept simple & machine-readable for now)
     summary_path = output_dir / (Path(text_report_name).name)
     try:
         with open(summary_path, "w", encoding="utf-8") as f:
@@ -338,7 +572,6 @@ def generate_full_report(
 
             pdf_path = output_dir / pdf_report_name
             options = {"quiet": ""}
-            # Using the html string via a temp file is more robust for wkhtmltopdf
             pdfkit.from_file(str(html_path), str(pdf_path), options=options, configuration=config)
             logger.info("PDF report generated: %s", pdf_path)
         except Exception as e:
@@ -359,13 +592,18 @@ def generate_full_report(
     return result
 
 
+# -----------------------
+# Local ad-hoc test
+# -----------------------
 if __name__ == "__main__":
-    # Quick local test when executed directly (non-production)
     logging.basicConfig(level=logging.INFO)
     sample_csv = Path("output/parsed_security_logs.csv")
     if not sample_csv.exists():
         logger.error("Sample CSV not found: %s. Please run the parser first.", sample_csv)
     else:
-        df = pd.read_csv(sample_csv)
+        try:
+            df = pd.read_csv(sample_csv)
+        except Exception:
+            df = pd.read_csv(sample_csv, low_memory=False)
         out = generate_full_report(df, chart_paths=[], output_dir=Path("output/reports/test"))
         logger.info("Generated resources: %s", out)

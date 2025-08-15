@@ -137,16 +137,18 @@ def detect(df):
             desc += f" Correlated {correlated_count} failed logon(s) within last {int(window.total_seconds()/60)} minute(s)."
         elif correlated_count > 0:
             desc += f" Correlated {correlated_count} failed logon(s) within last {int(window.total_seconds()/60)} minute(s) (below threshold)."
-
+            
         alert = {
             "type": "Account Lockout",
             "user": user,
+            "time": locked_on_dt.isoformat() if locked_on_dt else None,  # Added
             "locked_on": locked_on_dt.isoformat() if locked_on_dt else None,
             "machine": machine,
             "correlated_failed_attempts": correlated_count,
             "correlated_examples": correlated_examples,
             "description": desc
         }
+
 
         alerts.append(alert)
 

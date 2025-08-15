@@ -1,22 +1,25 @@
 # SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-import datetime
+# src/report/report_text.py
 
-def generate_text_report(summary: dict, detection_alerts: list, output_dir: str) -> None:
+import datetime
+from textwrap import shorten
+
+def generate_text_report(summary: dict, grouped_alerts: list, raw_alerts: list, output_dir: str) -> None:
     """
     Generates a professional, enhanced text summary report for SOC-Log-Analyzer.
 
     Args:
-        summary (dict): Pre-computed summary stats from logs, e.g., total_logs, top_users, etc.
-        detection_alerts (list): List of alert dicts with keys like 'type', 'message', 'timestamp', 'severity'.
-        output_dir (str): Directory path to save the text report file.
+        summary (dict): Summary stats (total_logs, top_users, etc.)
+        grouped_alerts (list): Alerts grouped by type, user, severity.
+        raw_alerts (list): Full raw alert dicts.
+        output_dir (str): Path to save the text report file.
     """
 
-    # Calculate duration as human readable string
+    # Calculate duration
     start_time = summary.get("start_time")
     end_time = summary.get("end_time")
-
     try:
         start_dt = datetime.datetime.fromisoformat(start_time)
         end_dt = datetime.datetime.fromisoformat(end_time)
@@ -25,71 +28,67 @@ def generate_text_report(summary: dict, detection_alerts: list, output_dir: str)
         minutes = int((duration_sec % 3600) // 60)
         duration_str = f"{hours}h {minutes}m"
     except Exception:
-        duration_str = "N/A"
+        duration_str = "Unknown"
 
-    # Prepare top users and event IDs
-    top_users = summary.get("top_users", {})
-    top_users_sorted = sorted(top_users.items(), key=lambda x: x[1], reverse=True)[:5]
-
-    top_event_ids = summary.get("top_event_ids", {})
-    top_event_ids_sorted = sorted(top_event_ids.items(), key=lambda x: x[1], reverse=True)[:5]
-
-    # Count alerts by severity
-    alerts_count = len(detection_alerts)
+    # Severity counts
     severity_counts = {}
-    for alert in detection_alerts:
-        sev = alert.get("severity", "Unknown")
-        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+    for g in grouped_alerts:
+        sev = str(g.get("severity", "Unknown")).capitalize()
+        severity_counts[sev] = severity_counts.get(sev, 0) + g.get("count", 1)
 
-    # Detect potential anomalies (example: off-hours logons)
+    # Potential anomalies
     anomalies = []
-    for alert in detection_alerts:
-        if alert.get("type") == "Unusual Logon Time":
-            anomalies.append(f"- Off-hours logon: User '{alert.get('user')}' at {alert.get('timestamp')}")
-
-    # Rare events example: event IDs with very low count (<=2)
+    for g in grouped_alerts:
+        if "unusual logon time" in g.get("type", "").lower():
+            anomalies.append(f"- Off-hours logon: User '{g.get('user', 'Unknown')}' ({g.get('count', 0)} times)")
     rare_events = [eid for eid, count in summary.get("top_event_ids", {}).items() if count <= 2]
     if rare_events:
         anomalies.append(f"- Rare events detected: {', '.join(str(e) for e in rare_events)}")
 
-    # Compose report lines
+    # Start report
     lines = []
     lines.append("=" * 60)
     lines.append("SOC INCIDENT SUMMARY REPORT")
-    
-    # ====== Added Report Generated Timestamp ======
-    report_generated_at = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    lines.append(f"Report Generated At: {report_generated_at}")
-    lines.append("")
-
+    lines.append(f"Report Generated At: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     lines.append("=" * 60)
     lines.append("")
+    
+    # Dataset Overview
     lines.append("📊 Dataset Overview")
-    lines.append(f"- Total Logs: {summary.get('total_logs', 'N/A')}")
-    lines.append(f"- Time Range: {start_time} → {end_time}")
+    lines.append(f"- Total Logs: {summary.get('total_logs', 'Unknown')}")
+    lines.append(f"- Time Range: {start_time or 'Unknown'} → {end_time or 'Unknown'}")
     lines.append(f"- Duration: {duration_str}")
-    lines.append(f"- Unique Hosts: {summary.get('unique_hosts', 'N/A')}")
+    lines.append(f"- Unique Hosts: {summary.get('unique_hosts', 'Unknown')}")
     lines.append("")
 
-    lines.append("👤 Top 5 Active Users")
-    for i, (user, count) in enumerate(top_users_sorted, 1):
-        lines.append(f"{i}. {user} ({count} events)")
+    # Severity Breakdown
+    lines.append("🚨 Severity Breakdown")
+    for sev, count in severity_counts.items():
+        lines.append(f"- {sev}: {count}")
     lines.append("")
 
-    lines.append("🔍 Top 5 Event IDs")
-    for i, (eid, count) in enumerate(top_event_ids_sorted, 1):
-        lines.append(f"{i}. {eid} → {count} occurrences")
-    lines.append("")
+    # Grouped Alerts Summary
+    lines.append("📌 Grouped Alerts Summary")
+    if grouped_alerts:
+        lines.append(f"{'Alert Type':30} | {'User':20} | {'Sev':6} | {'Cnt':3} | {'First Seen':16} | {'Last Seen':16}")
+        lines.append("-" * 100)
+        for g in grouped_alerts:
+            first_seen = (str(g.get('first_seen'))[:16]) if g.get('first_seen') else "Unknown"
+            last_seen = (str(g.get('last_seen'))[:16]) if g.get('last_seen') else "Unknown"
 
-    lines.append("🚨 Detection Alerts")
-    if alerts_count == 0:
-        lines.append("- No detection alerts triggered.")
+            lines.append(
+                f"{shorten(g.get('type', 'Unknown'), 30):30} | "
+                f"{shorten(g.get('user', 'Unknown'), 20):20} | "
+                f"{str(g.get('severity', 'Unknown'))[:6]:6} | "
+                f"{g.get('count', 0):3} | "
+                f"{first_seen:16} | "
+                f"{last_seen:16}"
+            )
     else:
-        lines.append(f"- Total alerts: {alerts_count}")
-        for sev, count in severity_counts.items():
-            lines.append(f"  - {sev} severity: {count}")
+        lines.append("- No alerts triggered.")
     lines.append("")
 
+    # Potential Anomalies
     lines.append("⚠️ Potential Anomalies")
     if anomalies:
         lines.extend(anomalies)
@@ -97,19 +96,14 @@ def generate_text_report(summary: dict, detection_alerts: list, output_dir: str)
         lines.append("- None detected.")
     lines.append("")
 
+    # Final Stats
+    lines.append(f"Total Detection Alerts: {len(raw_alerts)}")
     lines.append("=" * 60)
-
-    # ====== Added Total Detection Alerts before footer ======
-    lines.insert(-1, f"Total Detection Alerts: {alerts_count}")
-
     lines.append("Generated by SOC-Log-Analyzer | For Internal SOC Use Only")
-    lines.append("=" * 60)
-
-    # ====== Added GitHub Link Footer ======
-    lines.append("")
     lines.append("Visit https://github.com/Muhammad-Abid99/SOC-Log-Analyzer for more info.")
 
-    # Write to file
+    # Save to file
     report_path = f"{output_dir}/log_summary.txt"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+

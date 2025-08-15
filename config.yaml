@@ -29,7 +29,7 @@ chart_paths:
   - "output/logon_spike_timeseries.png"
 
 # ⚙️ Parsing Controller
-parse_limit: 1000     # Number of logs to parse (set to 0 for no limit)
+parse_limit: 0     # Number of logs to parse (set to 0 for no limit)
 
 # 🖨️ PDF Conversion Tool (optional)
 wkhtmltopdf_path: null   # Set to system path if wkhtmltopdf is installed

@@ -15,13 +15,13 @@ import pandas as pd
 from windows_parser import parse_evtx_to_csv
 from analyzer import run_threat_detection
 from log_stats import generate_log_stats
+from detector_manager import run_all_detectors
 from report.report_generator import generate_full_report
-from report.report_text import generate_text_report  # Optional: fallback text report
+from report.report_text import generate_text_report
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("SOC-Log-Analyzer")
-
 
 # --- Load Configuration ---
 def load_config():
@@ -31,7 +31,6 @@ def load_config():
         sys.exit(1)
     with open(config_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file)
-
 
 # --- Main CLI ---
 def main():
@@ -63,7 +62,6 @@ def main():
     if args.stats or args.all:
         logger.info("📊 Generating Log Statistics...")
         stats, charts = generate_log_stats(parsed_csv)
-        # No duplicate "Log statistics complete" logging
         logger.info("📊 Log statistics generated successfully.\n")
 
     # --- Step 3: Threat Detection ---
@@ -85,7 +83,7 @@ def main():
             for idx, alert in enumerate(detectors_results, 1):
                 print(f"{idx}. {alert}")
         logger.info("✅ Threat detection complete.\n")
-
+        
     # --- Step 4: Report Generation ---
     if args.report or args.all:
         if not os.path.exists(parsed_csv):
@@ -95,28 +93,61 @@ def main():
         logger.info("📝 Generating Reports...")
         df = pd.read_csv(parsed_csv)
 
+        # Run detectors - returns raw alerts + grouped alerts
+        all_alerts, grouped_alerts = run_all_detectors(df)
+
+        # 🛠 FIX: Add first_seen / last_seen to grouped alerts if missing
+        for g in grouped_alerts:
+            g_alerts = [
+                a for a in all_alerts
+                if a.get("type") == g.get("type") and a.get("user") == g.get("user")
+            ]
+            if g_alerts:
+                times = []
+                for a in g_alerts:
+                    ts = a.get("time") or a.get("TimeCreated") or a.get("timestamp")
+                    if ts:
+                        try:
+                            times.append(pd.to_datetime(ts))
+                        except Exception:
+                            pass
+                if times:
+                    g["first_seen"] = min(times).strftime("%Y-%m-%d %H:%M")
+                    g["last_seen"] = max(times).strftime("%Y-%m-%d %H:%M")
+                else:
+                    g["first_seen"] = "N/A"
+                    g["last_seen"] = "N/A"
+            else:
+                g["first_seen"] = "N/A"
+                g["last_seen"] = "N/A"
+
+        # Generate HTML/PDF report
         result = generate_full_report(
             parsed_df=df,
-            detectors_results=detectors_results,
-            stats=stats,  # pass stats to report generator
+            detectors_results=all_alerts,       # raw alerts
+            grouped_alerts=grouped_alerts,      # grouped alerts
+            stats=stats,
             chart_paths=chart_paths,
             output_dir=report_output_dir,
+            anonymize=False,
             wkhtmltopdf_path=wkhtmltopdf_path
         )
+
         logger.info(f"✅ Report generation complete. Files saved at: {result['out_dir']}\n")
 
-        # Optional: generate plain text report
+        # Generate plain text report (Summary + Grouped + Raw Alerts)
         generate_text_report(
-            result.get("summary", {}),
-            detectors_results or [],
-            result["out_dir"]
+            result.get("summary", {}),  # summary stats
+            grouped_alerts,              # grouped alerts for table view
+            all_alerts,                   # raw alerts for total count
+            result["out_dir"]              # same directory as PDF/HTML
         )
 
+     
     # --- No Arguments ---
     if not any(vars(args).values()):
         parser.print_help()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

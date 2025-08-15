@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+# src/detectors/unusual_logon_time_detector.py
+
 import yaml
 from datetime import datetime
 import os
@@ -32,6 +34,7 @@ def detect(df):
             alerts.append({
                 "type": "Unusual Logon Time",
                 "user": user,
+                "time": time_str,  # Added
                 "logon_time": logon_time.isoformat(),
                 "description": f"Unusual Logon Time: User '{user}' logged in at {logon_time}, outside working hours."
             })
