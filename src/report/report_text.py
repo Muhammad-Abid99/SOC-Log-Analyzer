@@ -1,28 +1,41 @@
+### src/report/report_text.py
+# Updated with Step 1: Report Context Enhancements
 # SPDX-FileCopyrightText: 2025 G. Mohammad <ghmuhammad324@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# src/report/report_text.py
+"""
+Enhancements:
+- Added Source IP & Hostname summary
+- Added Top affected accounts in anomalies
+- Added Threat classification tags in Grouped Alerts
+"""
 
 import datetime
 from textwrap import shorten
 
+THREAT_TAGS = {
+    "brute force": "External Attack",
+    "new user": "Insider Threat",
+    "privileged logon": "Privilege Escalation",
+    "unusual logon": "Suspicious Behavior",
+    "account lockout": "Account Compromise",
+}
+
+def classify_threat(alert_type: str) -> str:
+    t = (alert_type or "").lower()
+    for key, tag in THREAT_TAGS.items():
+        if key in t:
+            return tag
+    return "General"
+
 def generate_text_report(summary: dict, grouped_alerts: list, raw_alerts: list, output_dir: str) -> None:
-    """
-    Generates a professional, enhanced text summary report for SOC-Log-Analyzer.
+    from dateutil import parser
 
-    Args:
-        summary (dict): Summary stats (total_logs, top_users, etc.)
-        grouped_alerts (list): Alerts grouped by type, user, severity.
-        raw_alerts (list): Full raw alert dicts.
-        output_dir (str): Path to save the text report file.
-    """
-
-    # Calculate duration
     start_time = summary.get("start_time")
     end_time = summary.get("end_time")
     try:
-        start_dt = datetime.datetime.fromisoformat(start_time)
-        end_dt = datetime.datetime.fromisoformat(end_time)
+        start_dt = parser.parse(start_time)
+        end_dt = parser.parse(end_time)
         duration_sec = (end_dt - start_dt).total_seconds()
         hours = int(duration_sec // 3600)
         minutes = int((duration_sec % 3600) // 60)
@@ -30,51 +43,60 @@ def generate_text_report(summary: dict, grouped_alerts: list, raw_alerts: list, 
     except Exception:
         duration_str = "Unknown"
 
-    # Severity counts
+
     severity_counts = {}
     for g in grouped_alerts:
         sev = str(g.get("severity", "Unknown")).capitalize()
         severity_counts[sev] = severity_counts.get(sev, 0) + g.get("count", 1)
 
-    # Potential anomalies
     anomalies = []
     for g in grouped_alerts:
+        threat_tag = classify_threat(g.get("type", ""))
         if "unusual logon time" in g.get("type", "").lower():
-            anomalies.append(f"- Off-hours logon: User '{g.get('user', 'Unknown')}' ({g.get('count', 0)} times)")
+            anomalies.append(f"- Off-hours logon: User '{g.get('user', 'Unknown')}' ({g.get('count', 0)} times) [{threat_tag}]")
     rare_events = [eid for eid, count in summary.get("top_event_ids", {}).items() if count <= 2]
     if rare_events:
         anomalies.append(f"- Rare events detected: {', '.join(str(e) for e in rare_events)}")
 
-    # Start report
     lines = []
     lines.append("=" * 60)
     lines.append("SOC INCIDENT SUMMARY REPORT")
     lines.append(f"Report Generated At: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     lines.append("=" * 60)
     lines.append("")
-    
-    # Dataset Overview
+
     lines.append("📊 Dataset Overview")
     lines.append(f"- Total Logs: {summary.get('total_logs', 'Unknown')}")
-    lines.append(f"- Time Range: {start_time or 'Unknown'} → {end_time or 'Unknown'}")
+    lines.append(f"- Time Range: {summary.get('start_time', 'Unknown')} → {summary.get('end_time', 'Unknown')}")
     lines.append(f"- Duration: {duration_str}")
     lines.append(f"- Unique Hosts: {summary.get('unique_hosts', 'Unknown')}")
+    
+    # Unique Source IPs (display-friendly: show "None" instead of 0/empty)
+    unique_src_ips = summary.get("unique_source_ips")
+    if not unique_src_ips:
+        lines.append("- Unique Source IPs: None")
+    else:
+        lines.append(f"- Unique Source IPs: {unique_src_ips}")
+
+    if summary.get("top_source_ips"):
+        lines.append(f"- Top Source IPs: {summary['top_source_ips']}")
+    if summary.get("top_hostnames"):
+        lines.append(f"- Top Hostnames: {summary['top_hostnames']}")
     lines.append("")
 
-    # Severity Breakdown
     lines.append("🚨 Severity Breakdown")
     for sev, count in severity_counts.items():
         lines.append(f"- {sev}: {count}")
     lines.append("")
 
-    # Grouped Alerts Summary
     lines.append("📌 Grouped Alerts Summary")
     if grouped_alerts:
-        lines.append(f"{'Alert Type':30} | {'User':20} | {'Sev':6} | {'Cnt':3} | {'First Seen':16} | {'Last Seen':16}")
-        lines.append("-" * 100)
+        lines.append(f"{'Alert Type':30} | {'User':20} | {'Sev':6} | {'Cnt':3} | {'First Seen':16} | {'Last Seen':16} | Threat Tag")
+        lines.append("-" * 120)
         for g in grouped_alerts:
             first_seen = (str(g.get('first_seen'))[:16]) if g.get('first_seen') else "Unknown"
             last_seen = (str(g.get('last_seen'))[:16]) if g.get('last_seen') else "Unknown"
+            threat_tag = classify_threat(g.get("type", ""))
 
             lines.append(
                 f"{shorten(g.get('type', 'Unknown'), 30):30} | "
@@ -82,13 +104,13 @@ def generate_text_report(summary: dict, grouped_alerts: list, raw_alerts: list, 
                 f"{str(g.get('severity', 'Unknown'))[:6]:6} | "
                 f"{g.get('count', 0):3} | "
                 f"{first_seen:16} | "
-                f"{last_seen:16}"
+                f"{last_seen:16} | "
+                f"{threat_tag}"
             )
     else:
         lines.append("- No alerts triggered.")
     lines.append("")
 
-    # Potential Anomalies
     lines.append("⚠️ Potential Anomalies")
     if anomalies:
         lines.extend(anomalies)
@@ -96,14 +118,11 @@ def generate_text_report(summary: dict, grouped_alerts: list, raw_alerts: list, 
         lines.append("- None detected.")
     lines.append("")
 
-    # Final Stats
     lines.append(f"Total Detection Alerts: {len(raw_alerts)}")
     lines.append("=" * 60)
     lines.append("Generated by SOC-Log-Analyzer | For Internal SOC Use Only")
     lines.append("Visit https://github.com/Muhammad-Abid99/SOC-Log-Analyzer for more info.")
 
-    # Save to file
     report_path = f"{output_dir}/log_summary.txt"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-
