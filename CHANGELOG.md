@@ -8,6 +8,26 @@ SPDX-License-Identifier: Apache-2.0
 All notable changes to this real-world cybersecurity tool are documented in this file.  
 This changelog follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses semantic versioning.
 
+## [v0.4.0] - 2025-08-15
+### Added
+- 🕒 **Accurate First Seen & Last Seen timestamps** for every grouped alert in all report formats:
+  - **Text Summary (`report_text.py`)**
+  - **HTML Report**
+  - **PDF Report**
+- 📈 Timestamp improvements now fully synced across **CLI output**, **HTML**, **PDF**, and **Text reports**.
+- 🖋 Updated **README.md** to include real-world problem statement, business value, and growth potential.
+- 📄 Added **short investor-facing README** version for funding and partnership outreach.
+
+### Changed
+- 🔄 Enhanced grouped alert display for clarity and professionalism.
+- 🔄 Improved report formatting consistency between text, HTML, and PDF outputs.
+
+### Fixed
+- 🐛 Resolved `N/A` timestamp issue in PDF & HTML reports.
+- 🐛 Fixed mismatched data between text and PDF reports.
+
+---
+
 ## [v0.3.0] - 2025-08-11
 ### Added
 - 📝 Complete report generation modules with support for:
