@@ -29,11 +29,27 @@ chart_paths:
   - "output/logon_spike_timeseries.png"
 
 # ⚙️ Parsing Controller
-parse_limit: 0     # Number of logs to parse (set to 0 for no limit)
+parse_limit: 100     # Number of logs to parse (set to 0 for no limit)
 
 # 🖨️ PDF Conversion Tool (optional)
 wkhtmltopdf_path: null   # Set to system path if wkhtmltopdf is installed
 
+# 📚 Context Library (event ID metadata, detection mapping, severity, recommendations)
+context_library:
+  enabled: true
+  file: "src/context_library.py"
+
+# 🏷️ Contextual Metadata (new!)
+context:
+  tool_name: "SOC-Log-Analyzer"
+  version: "v1.0.0"
+  analyst: "G. Mohammad"
+  organization: "Cyber Defense Lab"
+  environment: "Test Lab"    # Example: Production / Staging / Test
+  hostname: null             # Will auto-fill if null
+  ip_address: null           # Will auto-fill if null
+
 # 🔐 Reserved for future use (SIEM, auth, etc.)
 # api_keys:
 #   virustotal: "YOUR_API_KEY"
+
