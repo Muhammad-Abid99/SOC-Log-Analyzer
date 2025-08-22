@@ -68,10 +68,14 @@ output/reports/
 output/*.png
 output/*.html
 output/*.pdf
+output/*.txt
 
 # Keep the .gitkeep so output folder is tracked even if empty
 !output/.gitkeep
 
 src/utils.py
+
+# tests folder
+tests/*
 
 # End of .gitignore
