@@ -41,8 +41,18 @@ def main():
     parser.add_argument('--stats', action='store_true', help='Show log statistics from parsed CSV')
     parser.add_argument('--all', action='store_true', help='Run full pipeline: parse + analyze + report + stats')
 
+    # New: report-type (exec / analyst / raw)
+    parser.add_argument(
+        '--report-type',
+        choices=['exec', 'analyst', 'raw'],
+        default='analyst',
+        help='Type of report to generate (exec = executive, analyst = full SOC, raw = technical dump)'
+    )
+
     args = parser.parse_args()
     config = load_config()
+
+    report_type = (args.report_type or "analyst").lower()
 
     # --- Paths from config ---
     input_evtx = config.get("input_evtx")
@@ -130,7 +140,8 @@ def main():
             chart_paths=chart_paths,
             output_dir=report_output_dir,
             anonymize=False,
-            wkhtmltopdf_path=wkhtmltopdf_path
+            wkhtmltopdf_path=wkhtmltopdf_path,
+            report_type=report_type
         )
 
         logger.info(f"✅ Report generation complete. Files saved at: {result['out_dir']}\n")
@@ -140,7 +151,8 @@ def main():
             result.get("summary", {}),  # summary stats
             grouped_alerts,              # grouped alerts for table view
             all_alerts,                   # raw alerts for total count
-            result["out_dir"]              # same directory as PDF/HTML
+            result["out_dir"],            # same directory as PDF/HTML
+            report_type=report_type
         )
 
      
