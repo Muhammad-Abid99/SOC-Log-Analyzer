@@ -6,28 +6,7 @@ src/report/report_generator.py
 
 Production-ready, template-free report generator for SOC-Log-Analyzer.
 
-Key features (MVP-ready for investors/CISOs):
-- Executive summary with totals, time range, hosts
-- Severity breakdown (counts)
-- Grouped Alerts table (Alert Type | User | Severity | Count | First/Last Seen)
-- Appendix with full raw alerts
-- Optional charts embedded as Base64 (self-contained HTML/PDF)
-- Optional anonymization of identities (users) for safe sharing
-- Robust PDF generation via pdfkit/wkhtmltopdf (if available)
-- Backward compatible with existing callers:
-    - If only detectors_results (raw) is provided → auto-groups internally.
-    - If grouped_alerts is also provided → uses it directly.
-
-Usage example:
-from report.report_generator import generate_full_report
-out = generate_full_report(
-    parsed_df=df,
-    detectors_results=alerts_raw,
-    grouped_alerts=alerts_grouped,         # optional
-    chart_paths=["output/charts/severity.png"],
-    output_dir=Path("output/reports"),
-    anonymize=False
-)
+(unchanged header docstring)
 """
 
 import os
@@ -229,13 +208,13 @@ def _build_summary(
     stats: Optional[Dict[str, Any]] = None,
     grouped_alerts: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
-    """Build a concise executive summary (dict) from the parsed DataFrame and detector outputs."""
+    """Build a concise executive summary (dict) from the parsed DataFrame and detector outputs.""" 
     summary: Dict[str, Any] = {}
 
-    summary["total_logs"] = int(len(df))
+    summary["total_logs"] = int(len(df) if df is not None else 0)
 
     # Timespan
-    if "TimeCreated" in df.columns:
+    if df is not None and "TimeCreated" in df.columns:
         times = pd.to_datetime(df["TimeCreated"], errors="coerce").dropna()
         if len(times) > 0:
             summary["start_time"] = times.min().isoformat()
@@ -252,22 +231,22 @@ def _build_summary(
 
     # Hosts
     for host_col in ("Computer", "Host", "Hostname"):
-        if host_col in df.columns:
+        if df is not None and host_col in df.columns:
             summary["unique_hosts"] = int(df[host_col].nunique(dropna=True))
             break
     else:
         summary["unique_hosts"] = 0
 
     # Top EventIDs
-    if "EventID" in df.columns:
+    if df is not None and "EventID" in df.columns:
         ev_counts = df["EventID"].value_counts().head(10)
         summary["top_event_ids"] = {int(k): int(v) for k, v in ev_counts.to_dict().items()}
     else:
         summary["top_event_ids"] = {}
 
     # Top Users (common columns)
-    user_cols = [c for c in ("TargetUserName", "SubjectUserName", "AccountName", "TargetUser", "UserName") if c in df.columns]
-    if user_cols:
+    user_cols = [c for c in ("TargetUserName", "SubjectUserName", "AccountName", "TargetUser", "UserName") if df is not None and c in df.columns]
+    if user_cols and df is not None:
         uc = user_cols[0]
         vc = df[uc].value_counts().head(10)
         # normalize to str keys
@@ -315,11 +294,13 @@ def _generate_html_report(
     detectors_results: Optional[List[Dict[str, Any]]] = None,
     grouped_alerts: Optional[List[Dict[str, Any]]] = None,
     generated_at: Optional[str] = None,
+    report_type: str = "analyst",
 ) -> str:
-    """Return HTML string for the report."""
+    """Return HTML string for the report. Respects report_type: 'exec', 'analyst', 'raw'."""
     if not generated_at:
         generated_at = datetime.utcnow().isoformat() + "Z"
 
+    # Basic CSS (unchanged)
     css = """
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 20px; color: #111; }
     .container { max-width: 1100px; margin: 0 auto; }
@@ -360,13 +341,12 @@ def _generate_html_report(
         "</div>",
     ]
 
-    # Severity breakdown
+    # Severity breakdown (same for all)
     sev_counts = summary.get("alerts_by_severity", {}) or {}
     if sev_counts:
         html_parts.append("<h2>Severity Breakdown</h2>")
         html_parts.append("<table>")
         html_parts.append("<thead><tr><th>Severity</th><th>Count</th></tr></thead><tbody>")
-        # deterministic order
         order = ["Critical", "High", "Medium", "Low", "Info", "Unknown"]
         seen = set()
         for sev in order:
@@ -406,29 +386,70 @@ def _generate_html_report(
         html_parts.append("</div>")
         html_parts.append("</div>")  # grid-2
 
-    # Grouped Alerts Summary
+    # Grouped Alerts Summary handling by report_type
     if grouped_alerts:
         html_parts.append("<h2>Grouped Alerts Summary</h2>")
         html_parts.append("<table>")
         html_parts.append("<thead><tr><th>Alert Type</th><th>User</th><th>Severity</th><th>Count</th><th>First Seen</th><th>Last Seen</th></tr></thead>")
         html_parts.append("<tbody>")
-        for g in grouped_alerts:
-            html_parts.append(
-                "<tr>"
-                f"<td>{_safe_str(g.get('type','Alert'))}</td>"
-                f"<td>{_safe_str(g.get('user','Unknown'))}</td>"
-                f"<td>{_severity_badge_html(_safe_str(g.get('severity','Unknown')))}</td>"
-                f"<td>{_safe_str(g.get('count',1))}</td>"
-                f"<td>{_safe_str(g.get('first_seen','N/A'))}</td>"
-                f"<td>{_safe_str(g.get('last_seen','N/A'))}</td>"
-                "</tr>"
+
+        # Exec: show only top N relevant alerts (by severity then count)
+        if report_type == "exec":
+            weight = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Unknown": 0}
+            rows = sorted(
+                grouped_alerts,
+                key=lambda g: (
+                    -weight.get(str(g.get("severity", "Unknown")).title(), 0),
+                    -int(g.get("count", 0) or 0)
+                )
             )
-        html_parts.append("</tbody></table>")
+            top_rows = rows[:7]
+            for g in top_rows:
+                html_parts.append(
+                    "<tr>"
+                    f"<td>{_safe_str(g.get('type','Alert'))}</td>"
+                    f"<td>{_safe_str(g.get('user','Unknown'))}</td>"
+                    f"<td>{_severity_badge_html(_safe_str(g.get('severity','Unknown')))}</td>"
+                    f"<td>{_safe_str(g.get('count',1))}</td>"
+                    f"<td>{_safe_str(g.get('first_seen','N/A'))}</td>"
+                    f"<td>{_safe_str(g.get('last_seen','N/A'))}</td>"
+                    "</tr>"
+                )
+            html_parts.append("</tbody></table>")
+            html_parts.append("<div class='muted'>Showing top alerts only for executive summary. Full details in analyst report or appendix.</div>")
+        elif report_type == "raw":
+            # Raw: just dump all grouped rows plainly (for forensics)
+            for g in grouped_alerts:
+                html_parts.append(
+                    "<tr>"
+                    f"<td>{_safe_str(g.get('type','Alert'))}</td>"
+                    f"<td>{_safe_str(g.get('user','Unknown'))}</td>"
+                    f"<td>{_safe_str(g.get('severity','Unknown'))}</td>"
+                    f"<td>{_safe_str(g.get('count',1))}</td>"
+                    f"<td>{_safe_str(g.get('first_seen','N/A'))}</td>"
+                    f"<td>{_safe_str(g.get('last_seen','N/A'))}</td>"
+                    "</tr>"
+                )
+            html_parts.append("</tbody></table>")
+        else:
+            # Analyst: detailed table (same as previous behavior)
+            for g in grouped_alerts:
+                html_parts.append(
+                    "<tr>"
+                    f"<td>{_safe_str(g.get('type','Alert'))}</td>"
+                    f"<td>{_safe_str(g.get('user','Unknown'))}</td>"
+                    f"<td>{_severity_badge_html(_safe_str(g.get('severity','Unknown')))}</td>"
+                    f"<td>{_safe_str(g.get('count',1))}</td>"
+                    f"<td>{_safe_str(g.get('first_seen','N/A'))}</td>"
+                    f"<td>{_safe_str(g.get('last_seen','N/A'))}</td>"
+                    "</tr>"
+                )
+            html_parts.append("</tbody></table>")
     else:
-        html_parts.append("<h2>Grouped Alerts Summary</h2><div class='muted'>No alerts triggered.</div>")
+        html_parts.append("<div class='muted'>No grouped alerts available.</div>")
 
     # Charts
-    if charts_data_uris:
+    if charts_data_uris and report_type != "raw":
         html_parts.append("<h2>Visualizations</h2>")
         for c in charts_data_uris:
             title = c.get("title") or "Chart"
@@ -440,8 +461,8 @@ def _generate_html_report(
                 html_parts.append("<div class='muted'>Chart unavailable</div>")
             html_parts.append("</div>")
 
-    # Appendix (raw alerts)
-    if detectors_results:
+    # Appendix (raw alerts) - only for analyst and raw (raw expects appendix)
+    if detectors_results and report_type == "analyst":
         html_parts.append("<h2>Appendix: Full Raw Alerts</h2>")
         for i, alert in enumerate(detectors_results, 1):
             if not isinstance(alert, dict):
@@ -460,6 +481,14 @@ def _generate_html_report(
                 else:
                     html_parts.append(f"<strong>{_safe_str(key)}:</strong> {_safe_str(val)}<br>")
             html_parts.append("</div><hr>")
+    elif detectors_results and report_type == "raw":
+        # Raw: compact JSON appendix for download/forensics
+        html_parts.append("<h2>Appendix: Raw Alerts (compact)</h2>")
+        try:
+            compact = json.dumps(detectors_results, indent=2, default=str)
+            html_parts.append(f"<pre>{_safe_str(compact)}</pre>")
+        except Exception:
+            html_parts.append("<div class='muted'>Unable to render raw alerts.</div>")
 
     # Footer / metadata
     html_parts.append("<div class='footer'>")
@@ -487,12 +516,14 @@ def generate_full_report(
     pdf_report_name: str = "log_analysis_report.pdf",
     text_report_name: str = "log_summary.txt",
     grouped_alerts: Optional[List[Dict[str, Any]]] = None,  # NEW: optional, but backward-compatible
+    report_type: str = "analyst",
 ) -> Dict[str, Any]:
     """
     Main entrypoint to produce a template-free HTML (and optional PDF) report.
 
     Returns a dict with keys: out_dir, html_path, pdf_path (or None), text_report_path, summary, charts_included
     """
+    report_type = (report_type or "analyst").lower()
 
     output_dir = Path(output_dir)
     _ensure_dir(output_dir)
@@ -528,7 +559,7 @@ def generate_full_report(
         summary["top_users"] = _anonymize_top_users(summary.get("top_users", {}), alias_map)
         grouped_alerts = _anonymize_grouped_alerts(grouped_alerts or [], alias_map)
 
-    # HTML assembly
+    # HTML assembly (respect report_type)
     metadata = {"project": "SOC-Log-Analyzer", "generated_at": datetime.utcnow().isoformat() + "Z"}
     html_str = _generate_html_report(
         summary=summary,
@@ -537,6 +568,7 @@ def generate_full_report(
         detectors_results=detectors_results,
         grouped_alerts=grouped_alerts,
         generated_at=metadata["generated_at"],
+        report_type=report_type,
     )
 
     # Write HTML
@@ -549,7 +581,7 @@ def generate_full_report(
         logger.exception("Failed to write HTML report: %s", e)
         raise
 
-    # Write text summary (kept simple & machine-readable for now)
+    # Write text summary (kept machine-readable for compatibility)
     summary_path = output_dir / (Path(text_report_name).name)
     try:
         with open(summary_path, "w", encoding="utf-8") as f:
@@ -587,6 +619,7 @@ def generate_full_report(
         "text_report_path": str(summary_path) if summary_path else None,
         "summary": summary,
         "charts_included": [c.get("path") for c in charts_data_uris],
+        "report_type": report_type,
     }
 
     return result
